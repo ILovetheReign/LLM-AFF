@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive LLM Comparison Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Neutrals with Teal Accent -->
+    <!-- Application Structure Plan: A single-page application with two main views: a dashboard for visual comparisons (radar chart, bar chart, feature table) and a text-based "Models & Subscriptions" page. Navigation between these views is handled by top-level buttons, providing a more interactive and explorable experience. The dashboard offers quick insights, while the second page provides detailed textual information on model variants and pricing, catering to different user information needs within a cohesive SPA. -->
+    <!-- Visualization & Content Choices: The dashboard retains the Chart.js Radar Chart for general capabilities and a Chart.js Horizontal Bar Chart for usage popularity. The Key Features are presented in a dynamic HTML table with checkmarks. The new "Models & Subscriptions" page uses structured HTML text to present detailed information for each LLM. All dynamic content and page switching are powered by Vanilla JS. Confirmed NO SVG/Mermaid. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #000000; /* Black background for the entire page */
+        }
+        .chart-container {
+            position: relative;
+            margin: auto;
+            height: 50vh;
+            max-height: 450px;
+            width: 100%;
+            max-width: 600px;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 60vh;
+                max-height: 500px;
+            }
+        }
+        .strength-item::before {
+            content: "✓";
+            color: #34d399; /* emerald-400 for better visibility on dark */
+            font-weight: 700;
+            margin-right: 0.75rem;
+        }
+        .weakness-item::before {
+            content: "✗";
+            color: #f87171; /* red-400 for better visibility on dark */
+            font-weight: 700;
+            margin-right: 0.75rem;
+        }
+        .llm-button {
+            transition: all 0.2s ease-in-out;
+        }
+        .llm-button.active {
+            background-color: #0d9488; /* teal-600 */
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+        .llm-button:not(.active):hover {
+            background-color: #374151; /* gray-700 */
+        }
+        .features-table th, .features-table td {
+            padding: 0.75rem;
+            text-align: center;
+            border-bottom: 1px solid #4b5563; /* darker border for dark theme */
+        }
+        .features-table th:first-child, .features-table td:first-child {
+            text-align: left;
+            font-weight: 500;
+            color: #d1d5db; /* light gray text */
+        }
+        .features-table th {
+            background-color: #374151; /* darker background for table header */
+            font-weight: 600;
+            color: #a78bfa; /* purple-400 for model names */
+        }
+        .features-table tr:last-child td {
+            border-bottom: none;
+        }
+        .check-icon {
+            color: #34d399; /* emerald-400 */
+            font-weight: bold;
+            font-size: 1.25em;
+        }
+        .cross-icon {
+            color: #f87171; /* red-400 */
+            font-weight: bold;
+            font-size: 1.25em;
+        }
+        .nav-button {
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            transition: all 0.2s ease-in-out;
+            background-color: #374151; /* gray-700 */
+            color: #e5e7eb; /* light gray text */
+        }
+        .nav-button.active-nav {
+            background-color: #0d9488; /* teal-600 */
+            color: white;
+        }
+        .nav-button:not(.active-nav):hover {
+            background-color: #4b5563; /* gray-600 */
+        }
+        .gemini-button {
+            background-color: #14b8a6; /* teal-500 */
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            transition: background-color 0.2s ease-in-out;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .gemini-button:hover {
+            background-color: #0d9488; /* teal-600 */
+        }
+        .loading-spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid #14b8a6;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .purchase-link {
+            display: inline-block;
+            margin-top: 1.5rem;
+            padding: 0.75rem 1.5rem;
+            background-color: #a78bfa; /* purple-400 */
+            color: white;
+            border-radius: 0.5rem;
+            text-decoration: none;
+            font-weight: 600;
+            transition: background-color 0.2s ease-in-out;
+        }
+        .purchase-link:hover {
+            background-color: #8b5cf6; /* purple-500 */
+        }
+    </style>
+</head>
+<body class="text-gray-100"> <!-- Changed body text to light gray -->
+
+    <div class="container mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl sm:text-5xl font-extrabold text-white tracking-tight">Large Language Model Dashboard</h1> <!-- Changed text to white -->
+            <p class="mt-4 max-w-2xl mx-auto text-lg text-gray-300">An interactive guide to compare the top publicly available LLMs. Explore their capabilities visually and dive into the details of each model.</p> <!-- Changed text to light gray -->
+        </header>
+
+        <!-- Navigation Bar -->
+        <nav class="flex justify-center space-x-4 mb-12">
+            <button id="nav-dashboard" class="nav-button active-nav">Dashboard</button>
+            <button id="nav-models" class="nav-button">Models & Subscriptions</button>
+        </nav>
+
+        <!-- Dashboard Section -->
+        <div id="dashboard-section" class="page-section">
+            <main>
+                <!-- General Capabilities Analysis Section -->
+                <section class="mb-16">
+                    <div class="bg-gray-800 p-6 sm:p-8 rounded-2xl shadow-lg"> <!-- Changed background to gray-800 -->
+                        <h2 class="text-2xl font-bold text-center mb-2 text-white">General Capabilities Analysis</h2> <!-- Changed text to white -->
+                        <p class="text-center text-gray-300 mb-6 max-w-3xl mx-auto">This radar chart provides a visual comparison of the models across six key attributes representing their general capabilities. A larger shape indicates stronger overall performance in these areas. Hover over points for specific scores.</p> <!-- Changed text to light gray -->
+                        <div class="chart-container">
+                            <canvas id="llmRadarChart"></canvas>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Usage Popularity Section -->
+                <section class="mb-16">
+                    <div class="bg-gray-800 p-6 sm:p-8 rounded-2xl shadow-lg"> <!-- Changed background to gray-800 -->
+                        <h2 class="text-2xl font-bold text-center mb-2 text-white">Usage Popularity</h2> <!-- Changed text to white -->
+                        <p class="text-center text-gray-300 mb-6 max-w-3xl mx-auto">This horizontal bar chart illustrates the relative popularity and adoption of each LLM based on available usage statistics and market presence. Higher bars indicate broader usage.</p> <!-- Changed text to light gray -->
+                        <div class="chart-container h-[40vh] max-h-[350px] md:h-[45vh] md:max-h-[400px]">
+                            <canvas id="llmUsageChart"></canvas>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Key Features Comparison Section (Table) -->
+                <section class="mb-16">
+                    <div class="bg-gray-800 p-6 sm:p-8 rounded-2xl shadow-lg"> <!-- Changed background to gray-800 -->
+                        <h2 class="text-2xl font-bold text-center mb-2 text-white">Key Features Comparison</h2> <!-- Changed text to white -->
+                        <p class="text-center text-gray-300 mb-6 max-w-3xl mx-auto">This table compares models based on specific technical and deployment-related features. A checkmark indicates the presence of the feature.</p> <!-- Changed text to light gray -->
+                        <div class="overflow-x-auto rounded-lg border border-gray-700"> <!-- Darker border -->
+                            <table id="llmFeaturesTable" class="min-w-full divide-y divide-gray-700 features-table">
+                                <!-- Table content will be injected by JS -->
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Detailed Breakdown Section -->
+                <section>
+                    <h2 class="text-2xl font-bold text-center mb-8 text-white">Detailed Model Breakdown</h2> <!-- Changed text to white -->
+                    <div id="llm-selector" class="flex flex-wrap justify-center gap-2 sm:gap-4 mb-8">
+                        <!-- Buttons will be injected by JS -->
+                    </div>
+                    <div id="llm-details-container" class="bg-gray-800 p-6 sm:p-8 rounded-2xl shadow-lg min-h-[300px] transition-opacity duration-300"> <!-- Changed background to gray-800 -->
+                        <!-- LLM details will be rendered here -->
+                    </div>
+                </section>
+            </main>
+        </div>
+
+        <!-- Models & Subscriptions Section -->
+        <div id="models-subscriptions-section" class="page-section hidden">
+            <section class="bg-gray-800 p-6 sm:p-8 rounded-2xl shadow-lg"> <!-- Changed background to gray-800 -->
+                <h2 class="text-2xl font-bold text-center mb-8 text-white">Models & Subscription Overview</h2> <!-- Changed text to white -->
+                <p class="text-center text-gray-300 mb-10 max-w-3xl mx-auto">This section provides a detailed look at the different model variants and subscription options offered by each LLM provider, helping you understand their commercial offerings and capabilities.</p> <!-- Changed text to light gray -->
+
+                <div class="space-y-12">
+                    <!-- OpenAI GPT-4 -->
+                    <div class="bg-gray-900 p-6 rounded-xl shadow-md text-gray-100"> <!-- Individual model box background is gray-900 -->
+                        <h3 class="text-xl font-semibold mb-4 text-purple-400">OpenAI GPT-4</h3>
+                        <p class="mb-4">OpenAI offers a range of models under the GPT-4 family, designed for various use cases from general-purpose tasks to highly optimized performance. Access is primarily through their API, with specific models available in their consumer-facing ChatGPT product.</p>
+                        <h4 class="text-lg font-medium text-emerald-300 mb-2">Key Models:</h4>
+                        <ul class="list-disc list-inside mb-4 space-y-1">
+                            <li>**GPT-4:** The flagship model, highly capable across a broad range of tasks including complex reasoning, creative writing, and coding.</li>
+                            <li>**GPT-4 Turbo:** Optimized for cost and speed, offering a larger context window and more up-to-date knowledge than the original GPT-4.</li>
+                            <li>**GPT-4o:** (Omni) A multimodal model designed for efficiency across text, audio, and vision, offering fast and cost-effective performance.</li>
+                            <li>**GPT-4o mini:** A smaller, highly efficient version of GPT-4o, ideal for lightweight tasks.</li>
+                        </ul>
+                        <h4 class="text-lg font-medium text-red-300 mb-2">Subscription/Access:</h4>
+                        <ul class="list-disc list-inside space-y-1">
+                            <li>**ChatGPT Free Tier:** Access to a specific GPT-3.5 model.</li>
+                            <li>**ChatGPT Plus ($20/month):** Access to GPT-4, GPT-4o, and other advanced features, with higher usage limits.</li>
+                            <li>**ChatGPT Team/Enterprise:** Designed for businesses, offering higher limits, collaboration features, and enhanced data privacy.</li>
+                            <li>**OpenAI API:** Pay-as-you-go pricing based on token usage for all models, suitable for developers integrating LLMs into applications.</li>
+                        </ul>
+                        <div class="mt-6 text-right">
+                            <a href="https://chatgpt.com/?model=auto#pricing" target="_blank" class="purchase-link">Purchase/Learn More &rarr;</a>
+                        </div>
+                    </div>
+
+                    <!-- Google Gemini -->
+                    <div class="bg-gray-900 p-6 rounded-xl shadow-md text-gray-100">
+                        <h3 class="text-xl font-semibold mb-4 text-purple-400">Google Gemini</h3>
+                        <p class="mb-4">Google's Gemini family of models is built to be natively multimodal, integrating text, image, audio, and video inputs. They are available in various sizes to cater to different computational needs and applications.</p>
+                        <h4 class="text-lg font-medium text-emerald-300 mb-2">Key Models:</h4>
+                        <ul class="list-disc list-inside mb-4 space-y-1">
+                            <li>**Gemini Ultra:** The largest and most capable model, designed for highly complex tasks and deep reasoning.</li>
+                            <li>**Gemini Pro:** A versatile model balancing capability and efficiency, suitable for a wide range of applications.</li>
+                            <li>**Gemini Flash:** A lightweight and fast model, optimized for high-volume, low-latency use cases.</li>
+                            <li>**Gemini Nano:** Designed for on-device deployment (e.g., smartphones), offering efficient performance for mobile applications.</li>
+                        </ul>
+                        <h4 class="text-lg font-medium text-red-300 mb-2">Subscription/Access:</h4>
+                        <ul class="list-disc list-inside space-y-1">
+                            <li>**Gemini Free Tier:** Access to Gemini Pro models through the Gemini web interface and mobile app.</li>
+                            <li>**Gemini Advanced ($19.99/month):** Provides access to Gemini Ultra, larger context windows, and enhanced features.</li>
+                            <li>**Google Cloud Vertex AI:** API access for developers and enterprises, offering flexible pricing based on model usage and features.</li>
+                            <li>**Google Workspace Integration:** Gemini features are integrated into Google Workspace applications (e.g., Gmail, Docs) for business users.</li>
+                        </ul>
+                        <div class="mt-6 text-right">
+                            <a href="https://one.google.com/ai?g1_last_touchpoint=61&g1_landing_page=65&utm_source=gemini&utm_medium=web&utm_campaign=sidenav_evo" target="_blank" class="purchase-link">Purchase/Learn More &rarr;</a>
+                        </div>
+                    </div>
+
+                    <!-- Anthropic Claude 3 -->
+                    <div class="bg-gray-900 p-6 rounded-xl shadow-md text-gray-100">
+                        <h3 class="text-xl font-semibold mb-4 text-purple-400">Anthropic Claude 3</h3>
+                        <p class="mb-4">Anthropic's Claude 3 family emphasizes safety, long context understanding, and strong performance across various cognitive tasks. They offer a tiered approach to cater to different levels of complexity and speed requirements.</p>
+                        <h4 class="text-lg font-medium text-emerald-300 mb-2">Key Models:</h4>
+                        <ul class="list-disc list-inside mb-4 space-y-1">
+                            <li>**Claude 3 Opus:** The most intelligent model, excelling in complex reasoning, nuanced content creation, and highly demanding tasks.</li>
+                            <li>**Claude 3 Sonnet:** A balance of intelligence and speed, suitable for enterprise workloads and general-purpose applications.</li>
+                            <li>**Claude 3 Haiku:** The fastest and most cost-effective model, designed for quick responses and lightweight tasks.</li>
+                        </ul>
+                        <h4 class="text-lg font-medium text-red-300 mb-2">Subscription/Access:</h4>
+                        <ul class="list-disc list-inside space-y-1">
+                            <li>**Claude Free Tier:** Access to Claude 3 Sonnet via the Claude web interface, with daily usage limits.</li>
+                            <li>**Claude Pro ($20/month):** Provides access to Opus, Sonnet, and Haiku with significantly higher usage limits.</li>
+                            <li>**Claude Team/Enterprise:** Tailored plans for organizations, offering enhanced features, support, and data control.</li>
+                            <li>**Anthropic API:** Pay-as-you-go pricing for developers, with different rates for each model in the Claude 3 family.</li>
+                        </ul>
+                        <div class="mt-6 text-right">
+                            <a href="https://www.anthropic.com/pricing" target="_blank" class="purchase-link">Purchase/Learn More &rarr;</a>
+                        </div>
+                    </div>
+
+                    <!-- Meta Llama 3 -->
+                    <div class="bg-gray-900 p-6 rounded-xl shadow-md text-gray-100">
+                        <h3 class="text-xl font-semibold mb-4 text-purple-400">Meta Llama 3</h3>
+                        <p class="mb-4">Llama 3 is Meta's latest open-source LLM, designed for broad applicability and customization. It comes in various parameter sizes, making it flexible for different deployment scenarios, from local machines to large-scale cloud infrastructure.</p>
+                        <h4 class="text-lg font-medium text-emerald-300 mb-2">Key Models:</h4>
+                        <ul class="list-disc list-inside mb-4 space-y-1">
+                            <li>**Llama 3 8B:** A smaller, efficient model suitable for on-device or edge deployment and rapid experimentation.</li>
+                            <li>**Llama 3 70B:** A more powerful model offering strong general capabilities, often compared to larger proprietary models.</li>
+                            <li>**Llama 3 400B+ (in development):** Larger, more capable versions are being developed for advanced use cases.</li>
+                        </ul>
+                        <h4 class="text-lg font-medium text-red-300 mb-2">Subscription/Access:</h4>
+                        <ul class="list-disc list-inside space-y-1">
+                            <li>**Open-Source Weights:** Llama 3 models are freely available for download and local deployment for research and commercial use (under a permissive license).</li>
+                            <li>**Cloud Providers:** Available through various cloud platforms (e.g., AWS, Azure, Google Cloud) which offer managed services and API access for Llama 3, with their own pricing structures.</li>
+                            <li>**Hugging Face:** Accessible via Hugging Face Hub for easy integration and experimentation.</li>
+                            <li>**Self-hosting:** Organizations can deploy and fine-tune Llama 3 on their own infrastructure, providing full control and data privacy.</li>
+                        </ul>
+                        <div class="mt-6 text-right">
+                            <a href="https://www.llama.com/models/llama-3/" target="_blank" class="purchase-link">Purchase/Learn More &rarr;</a>
+                        </div>
+                    </div>
+
+                    <!-- Mistral AI -->
+                    <div class="bg-gray-900 p-6 rounded-xl shadow-md text-gray-100">
+                        <h3 class="text-xl font-semibold mb-4 text-purple-400">Mistral AI</h3>
+                        <p class="mb-4">Mistral AI focuses on developing highly efficient, powerful, and open-source models, often leveraging Mixture-of-Experts (MoE) architectures for optimal performance. They offer both open weights and commercial API access.</p>
+                        <h4 class="text-lg font-medium text-emerald-300 mb-2">Key Models:</h4>
+                        <ul class="list-disc list-inside mb-4 space-y-1">
+                            <li>**Mistral 7B:** A compact yet powerful model, known for its efficiency and strong performance on various tasks.</li>
+                            <li>**Mixtral 8x7B:** An Mixture-of-Experts (MoE) model that combines multiple "expert" networks, offering high performance and efficiency.</li>
+                            <li>**Mistral Large:** Their flagship commercial model, designed for complex reasoning and general-purpose applications.</li>
+                            <li>**Codestral:** A specialized model optimized for code generation and understanding across many programming languages.</li>
+                        </ul>
+                        <h4 class="text-lg font-medium text-red-300 mb-2">Subscription/Access:</h4>
+                        <ul class="list-disc list-inside space-y-1">
+                            <li>**Open-Source Weights:** Many Mistral models (e.g., Mistral 7B, Mixtral 8x7B) are available with open weights for free use.</li>
+                            <li>**Mistral AI API:** Commercial API access to their larger and specialized models (e.g., Mistral Large, Codestral) with pay-as-you-go pricing.</li>
+                            <li>**Cloud Platforms:** Available through major cloud providers as managed services.</li>
+                            <li>**Self-hosting:** Option to deploy open-source models on private infrastructure.</li>
+                        </ul>
+                        <div class="mt-6 text-right">
+                            <a href="https://mistral.ai/pricing" target="_blank" class="purchase-link">Purchase/Learn More &rarr;</a>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <footer class="text-center mt-16 text-sm text-gray-400">
+            <p>Dashboard created to interactively explore LLM comparisons. Data is synthesized for illustrative purposes.</p>
+        </footer>
+    </div>
+
+    <script>
+        const llmData = {
+            'gpt4': {
+                name: 'OpenAI GPT-4',
+                color: 'rgba(75, 192, 192, 0.8)',
+                borderColor: 'rgba(75, 192, 192, 1)',
+                scores: [5, 5, 4, 2, 3, 1], // Reasoning, Creativity, Multimodality, Efficiency, Safety, Openness
+                usage: 5, // Usage Popularity
+                features: {
+                    'Multimodality (Image Input)': true,
+                    'Tool Use Integration': true,
+                    'Advanced Fine-tuning': true,
+                    'Large Context Window (>100k tokens)': true,
+                    'Open-Source Weights': false,
+                    'API Access': true,
+                    'Local Deployment': false
+                },
+                strengths: [
+                    "Highly capable across a wide range of tasks (writing, coding, reasoning).",
+                    "Strong performance on complex logical problems and creative generation.",
+                    "Multimodal capabilities (can understand images as input).",
+                    "Extensive general knowledge base."
+                ],
+                weaknesses: [
+                    "Can be computationally expensive and slower for real-time applications.",
+                    "Prone to 'hallucinations' (generating confident but incorrect information).",
+                    "Knowledge cut-off (information limited to its last training update).",
+                    "Less transparent about internal workings compared to open-source models."
+                ]
+            },
+            'gemini': {
+                name: 'Google Gemini',
+                color: 'rgba(54, 162, 235, 0.8)',
+                borderColor: 'rgba(54, 162, 235, 1)',
+                scores: [5, 4, 5, 3, 4, 1],
+                usage: 4,
+                features: {
+                    'Multimodality (Image Input)': true,
+                    'Tool Use Integration': true,
+                    'Advanced Fine-tuning': true,
+                    'Large Context Window (>100k tokens)': true,
+                    'Open-Source Weights': false,
+                    'API Access': true,
+                    'Local Deployment': false
+                },
+                strengths: [
+                    "Designed for multimodality from the ground up (text, image, audio, video).",
+                    "Strong reasoning and complex problem-solving abilities.",
+                    "Integrated with Google's ecosystem (search, tools).",
+                    "Good at summarizing and understanding long contexts."
+                ],
+                weaknesses: [
+                    "Performance can vary across different versions (Nano, Pro, Ultra/Advanced).",
+                    "May still exhibit occasional factual inaccuracies.",
+                    "Less accessible for local deployment compared to open-source models."
+                ]
+            },
+            'claude3': {
+                name: 'Anthropic Claude 3',
+                color: 'rgba(255, 159, 64, 0.8)',
+                borderColor: 'rgba(255, 159, 64, 1)',
+                scores: [5, 4, 3, 3, 5, 1],
+                usage: 3,
+                features: {
+                    'Multimodality (Image Input)': true,
+                    'Tool Use Integration': true,
+                    'Advanced Fine-tuning': true,
+                    'Large Context Window (>100k tokens)': true,
+                    'Open-Source Weights': false,
+                    'API Access': true,
+                    'Local Deployment': false
+                },
+                strengths: [
+                    "Exceptional performance in complex reasoning and nuanced conversations.",
+                    "Strong focus on safety and constitutional AI principles (less likely to generate harmful content).",
+                    "Very large context windows, ideal for long documents and detailed analysis.",
+                    "Different models (Opus, Sonnet, Haiku) offer a range of performance/cost tradeoffs."
+                ],
+                weaknesses: [
+                    "Can sometimes be overly cautious or refuse certain prompts due to safety guardrails.",
+                    "May be slower or more expensive for simpler tasks (especially Opus).",
+                    "Less widely adopted for local development compared to open-source alternatives."
+                ]
+            },
+            'llama3': {
+                name: 'Meta Llama 3',
+                color: 'rgba(255, 99, 132, 0.8)',
+                borderColor: 'rgba(255, 99, 132, 1)',
+                scores: [4, 4, 1, 4, 3, 5],
+                usage: 4,
+                features: {
+                    'Multimodality (Image Input)': false,
+                    'Tool Use Integration': true,
+                    'Advanced Fine-tuning': true,
+                    'Large Context Window (>100k tokens)': false,
+                    'Open-Source Weights': true,
+                    'API Access': true,
+                    'Local Deployment': true
+                },
+                strengths: [
+                    "Open-source and highly customizable, fostering a large developer community.",
+                    "Excellent performance for its size, especially the 70B parameter version.",
+                    "Can be run locally or on private infrastructure, offering more control and privacy.",
+                    "Strong foundation for fine-tuning for specific applications."
+                ],
+                weaknesses: [
+                    "Raw models require significant fine-tuning for optimal performance on specific tasks.",
+                    "May require substantial computational resources for larger versions.",
+                    "Less out-of-the-box 'polish' compared to proprietary models.",
+                    "Potential for misuse due to its open-source nature."
+                ]
+            },
+            'mistral': {
+                name: 'Mistral AI',
+                color: 'rgba(153, 102, 255, 0.8)',
+                borderColor: 'rgba(153, 102, 255, 1)',
+                scores: [4, 4, 1, 5, 3, 5],
+                usage: 3,
+                features: {
+                    'Multimodality (Image Input)': false,
+                    'Tool Use Integration': true,
+                    'Advanced Fine-tuning': true,
+                    'Large Context Window (>100k tokens)': true,
+                    'Open-Source Weights': true,
+                    'API Access': true,
+                    'Local Deployment': true
+                },
+                strengths: [
+                    "Highly efficient and fast, due to sparse mixture-of-experts (MoE) architecture.",
+                    "Strong performance for its compact size, making it cost-effective.",
+                    "Open-source and developer-friendly, suitable for local deployment.",
+                    "Excellent for summarization, code generation, and multilingual tasks."
+                ],
+                weaknesses: [
+                    "May not match the absolute peak performance of the largest models on all tasks.",
+                    "Requires careful fine-tuning for specialized use cases.",
+                    "Newer compared to some established models, so community resources are still growing."
+                ]
+            }
+        };
+
+        const capabilitiesLabels = ['Reasoning & Complexity', 'Creativity & Generation', 'Multimodality', 'Efficiency & Speed', 'Safety & Reliability', 'Openness & Customization'];
+        const featureLabels = [
+            'Multimodality (Image Input)',
+            'Tool Use Integration',
+            'Advanced Fine-tuning',
+            'Large Context Window (>100k tokens)',
+            'Open-Source Weights',
+            'API Access',
+            'Local Deployment'
+        ];
+        let radarChartCapabilities;
+        let barChartUsage;
+
+        function createCapabilitiesRadarChart() {
+            const ctx = document.getElementById('llmRadarChart').getContext('2d');
+            const datasets = Object.values(llmData).map(model => ({
+                label: model.name,
+                data: model.scores,
+                backgroundColor: model.color,
+                borderColor: model.borderColor,
+                borderWidth: 2,
+                pointBackgroundColor: model.borderColor,
+                pointBorderColor: '#fff',
+                pointHoverBackgroundColor: '#fff',
+                pointHoverBorderColor: model.borderColor,
+            }));
+
+            radarChartCapabilities = new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: capabilitiesLabels,
+                    datasets: datasets
+                },
+                options: {
+                    maintainAspectRatio: false,
+                    responsive: true,
+                    scales: {
+                        r: {
+                            angleLines: {
+                                color: '#4b5563' /* darker grid lines */
+                            },
+                            grid: {
+                                color: '#4b5563' /* darker grid lines */
+                            },
+                            pointLabels: {
+                                font: {
+                                    size: 12,
+                                    weight: '500'
+                                },
+                                color: '#d1d5db', /* lighter text for labels */
+                                callback: function(value) {
+                                    return value.length > 16 ? value.substring(0, 13) + '...' : value;
+                                }
+                            },
+                            ticks: {
+                                backdropColor: 'rgba(31, 41, 55, 0.75)', /* darker backdrop for ticks */
+                                color: '#9ca3af', /* lighter ticks */
+                                stepSize: 1,
+                                max: 5,
+                                min: 0
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                usePointStyle: true,
+                                font: {
+                                    size: 14,
+                                    color: '#e5e7eb' /* lighter legend text */
+                                }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.r !== null) {
+                                        label += context.parsed.r;
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function createUsageBarChart() {
+            const ctx = document.getElementById('llmUsageChart').getContext('2d');
+            const labels = Object.values(llmData).map(model => model.name);
+            const data = Object.values(llmData).map(model => model.usage);
+            const backgroundColors = Object.values(llmData).map(model => model.color);
+            const borderColors = Object.values(llmData).map(model => model.borderColor);
+
+            barChartUsage = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Usage Popularity Score (1-5)',
+                        data: data,
+                        backgroundColor: backgroundColors,
+                        borderColor: borderColors,
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    maintainAspectRatio: false,
+                    responsive: true,
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            max: 5,
+                            ticks: {
+                                stepSize: 1,
+                                color: '#9ca3af' /* lighter ticks */
+                            },
+                            grid: {
+                                color: '#4b5563' /* darker grid lines */
+                            }
+                        },
+                        y: {
+                            ticks: {
+                                color: '#d1d5db' /* lighter labels */
+                            },
+                            grid: {
+                                display: false
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    label += context.parsed.x;
+                                    return label;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function createFeaturesTable() {
+            const tableContainer = document.getElementById('llmFeaturesTable');
+            let tableHTML = `<thead><tr><th class="rounded-tl-lg">Feature</th>`;
+            Object.values(llmData).forEach(model => {
+                tableHTML += `<th>${model.name}</th>`;
+            });
+            tableHTML += `</tr></thead><tbody>`;
+
+            featureLabels.forEach(feature => {
+                tableHTML += `<tr><td>${feature}</td>`;
+                Object.values(llmData).forEach(model => {
+                    const hasFeature = model.features[feature];
+                    tableHTML += `<td>${hasFeature ? '<span class="check-icon">✓</span>' : '<span class="cross-icon">✗</span>'}</td>`;
+                });
+                tableHTML += `</tr>`;
+            });
+            tableHTML += `</tbody>`;
+            tableContainer.innerHTML = tableHTML;
+        }
+
+        async function generateUseCase(llmKey) {
+            const useCaseOutput = document.getElementById('use-case-output');
+            const generateButton = document.getElementById('generate-use-case-button');
+            const model = llmData[llmKey];
+
+            if (!model) {
+                useCaseOutput.innerHTML = '<p class="text-red-400">Error: LLM data not found.</p>';
+                return;
+            }
+
+            useCaseOutput.innerHTML = '<div class="loading-spinner"></div><p class="text-center text-gray-400 mt-4">Generating a use case idea...</p>';
+            generateButton.disabled = true;
+
+            const prompt = `As an AI solution architect, propose a single, innovative, and practical use case for ${model.name}, leveraging its key strengths: ${model.strengths.join(', ')}. Focus on a real-world problem it could solve. Keep the response concise, around 100-150 words.`;
+
+            let chatHistory = [];
+            chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+            const payload = { contents: chatHistory };
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const text = result.candidates[0].content.parts[0].text;
+                    useCaseOutput.innerHTML = `<p class="text-gray-200">${text}</p>`;
+                } else {
+                    useCaseOutput.innerHTML = '<p class="text-red-400">Failed to generate use case. Please try again.</p>';
+                }
+            } catch (error) {
+                useCaseOutput.innerHTML = `<p class="text-red-400">Error: ${error.message}. Could not connect to Gemini API.</p>`;
+            } finally {
+                generateButton.disabled = false;
+            }
+        }
+
+        function displayLlmDetails(llmKey) {
+            const container = document.getElementById('llm-details-container');
+            const model = llmData[llmKey];
+            if (!model) return;
+            
+            container.style.opacity = '0';
+            setTimeout(() => {
+                container.innerHTML = `
+                    <h3 class="text-2xl font-bold mb-6 text-purple-400">${model.name}</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+                        <div>
+                            <h4 class="text-lg font-semibold text-emerald-400 mb-3">Strengths</h4>
+                            <ul class="space-y-2 list-none">
+                                ${model.strengths.map(s => `<li class="strength-item text-gray-200">${s}</li>`).join('')}
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 class="text-lg font-semibold text-red-400 mb-3">Weaknesses</h4>
+                            <ul class="space-y-2 list-none">
+                                ${model.weaknesses.map(w => `<li class="weakness-item text-gray-200">${w}</li>`).join('')}
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="mt-8 pt-6 border-t border-gray-700">
+                        <h4 class="text-lg font-semibold text-white mb-4">✨ Generate a Use Case Idea</h4>
+                        <button id="generate-use-case-button" class="gemini-button" data-llm-key="${llmKey}">Generate Use Case</button>
+                        <div id="use-case-output" class="mt-4 p-4 rounded-lg bg-gray-700 text-gray-200 min-h-[80px] flex items-center justify-center text-center">
+                            Click 'Generate Use Case' to see an idea.
+                        </div>
+                    </div>
+                `;
+                container.style.opacity = '1';
+
+                // Attach event listener to the new button
+                document.getElementById('generate-use-case-button').addEventListener('click', (event) => {
+                    const key = event.target.dataset.llmKey;
+                    generateUseCase(key);
+                });
+
+            }, 150);
+            
+            // Highlight charts
+            [radarChartCapabilities, barChartUsage].forEach(chart => {
+                if (chart) {
+                    chart.data.datasets.forEach(dataset => {
+                        if (dataset.label === model.name) {
+                            dataset.borderWidth = 4;
+                            dataset.borderColor = llmData[llmKey].borderColor;
+                        } else {
+                            dataset.borderWidth = 1;
+                            dataset.borderColor = 'rgba(200, 200, 200, 0.5)';
+                        }
+                    });
+                    chart.update();
+                }
+            });
+        }
+
+        function setupSelectors() {
+            const selectorContainer = document.getElementById('llm-selector');
+            Object.keys(llmData).forEach(key => {
+                const model = llmData[key];
+                const button = document.createElement('button');
+                button.textContent = model.name;
+                button.dataset.key = key;
+                button.className = 'llm-button px-4 py-2 text-sm sm:text-base font-semibold text-purple-400 bg-gray-700 rounded-full shadow-sm border border-gray-600'; /* Adjusted button colors */
+                
+                button.addEventListener('click', () => {
+                    document.querySelectorAll('.llm-button').forEach(btn => btn.classList.remove('active'));
+                    button.classList.add('active');
+                    displayLlmDetails(key);
+                });
+
+                selectorContainer.appendChild(button);
+            });
+        }
+
+        // Page navigation logic
+        function showPage(pageId) {
+            document.querySelectorAll('.page-section').forEach(section => {
+                section.classList.add('hidden');
+            });
+            document.getElementById(pageId).classList.remove('hidden');
+
+            document.querySelectorAll('.nav-button').forEach(btn => {
+                const buttonElement = document.getElementById(btn.id);
+                if (buttonElement) {
+                    buttonElement.classList.remove('active-nav');
+                }
+            });
+            const activeButtonId = 'nav-' + pageId.replace('-section', '');
+            const activeButton = document.getElementById(activeButtonId);
+            if (activeButton) {
+                activeButton.classList.add('active-nav');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            createCapabilitiesRadarChart();
+            createUsageBarChart();
+            createFeaturesTable();
+            setupSelectors();
+
+            const firstButton = document.querySelector('.llm-button');
+            if(firstButton) {
+                firstButton.classList.add('active');
+                displayLlmDetails(firstButton.dataset.key);
+            }
+
+            // Setup navigation button event listeners
+            document.getElementById('nav-dashboard').addEventListener('click', () => showPage('dashboard-section'));
+            document.getElementById('nav-models').addEventListener('click', () => showPage('models-subscriptions-section'));
+
+            // Initially show the dashboard page
+            showPage('dashboard-section');
+        });
+    </script>
+</body>
+</html>
